@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, FlatList, Image, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {ActivityIndicator,FlatList,SafeAreaView,StyleSheet,Text,TextInput,View} from 'react-native';
 import { useEffect, useState } from 'react';
 import apiClient from '../service/api.service';
 import { ApiResponse, Character } from '../types/api.types';
@@ -9,29 +9,61 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import RickCard from '../components/RickCard';
 import { RootStackParamList } from '../types/navigation';
 
-export default function App() {
+export default function RickListScreen() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'RickList'>>();
+  const [page, setPage] = useState(1);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
-  const filteredCharacters = characters.filter((characters) => characters.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList, 'RickList'>>();
+
+  const filteredCharacters = characters.filter((character) =>
+    character.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const fetchCharacters = async (pageNumber: number) => {
+    try {
+      const response = await apiClient.get<ApiResponse<Character>>(
+        `/character?page=${pageNumber}`
+      );
+
+      const newCharacters = response.data.results;
+
+      setCharacters((prev) =>
+        pageNumber === 1 ? newCharacters : [...prev, ...newCharacters]
+      );
+
+      if (response.data.info.next === null) {
+        setHasMore(false);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Une erreur est survenue');
+    } finally {
+      setIsLoading(false);
+      setIsFetchingMore(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchCharacters = async () => {
-      try {
-        const response = await apiClient.get<ApiResponse<Character>>('/character');
-        setCharacters(response.data.results);
-      } catch (err: any) {
-        setError(err.message || 'Une erreur est survenue');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchCharacters();
+    fetchCharacters(1);
   }, []);
+
+  useEffect(() => {
+    if (page > 1) {
+      fetchCharacters(page);
+    }
+  }, [page]);
+
+  const handleLoadMore = () => {
+    if (!isLoading && !isFetchingMore && hasMore) {
+      setIsFetchingMore(true);
+      setPage((prev) => prev + 1);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -52,10 +84,9 @@ export default function App() {
     );
   }
 
-
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList 
+      <FlatList
         data={filteredCharacters}
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={
@@ -68,12 +99,20 @@ export default function App() {
             />
           </View>
         }
-
-        renderItem={({ item }) => <RickCard character={item} 
-        onPress={() => (
-          navigation.navigate('RickDetail', { character: item })
-        )}/>}
+        renderItem={({ item }) => (
+          <RickCard
+            character={item}
+            onPress={() => navigation.navigate('RickDetail', { character: item })}
+          />
+        )}
         contentContainerStyle={{ padding: 5 }}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isFetchingMore ? (
+            <ActivityIndicator size="small" style={styles.footerLoader} />
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -125,5 +164,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 5,
     paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+  footerLoader: {
+    marginVertical: 20,
   },
 });
